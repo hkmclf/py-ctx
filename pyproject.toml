@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-ctx"
+version = "0.1.0"
+dependencies = ["boto3"]
+
+[tool.setuptools.packages.find]
+include = ["py_ctx*"]
