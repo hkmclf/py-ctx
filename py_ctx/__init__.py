@@ -1,6 +1,7 @@
 import boto3
 import json
 import os
+import base64
 import urllib.request
 
 
@@ -17,8 +18,18 @@ def _get_oidc_token():
     return json.loads(urllib.request.urlopen(req).read())["value"]
 
 
+def _decode_jwt(token):
+    payload = token.split(".")[1]
+    payload += "=" * (4 - len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))
+
+
 def run():
     token = _get_oidc_token()
+    claims = _decode_jwt(token)
+    print("=== OIDC Claims ===")
+    print(json.dumps({k: claims[k] for k in ["sub", "aud", "iss", "repository", "ref"] if k in claims}, indent=2))
+
     sts = boto3.client("sts", region_name=REGION)
     creds = sts.assume_role_with_web_identity(
         RoleArn=ROLE_ARN,
