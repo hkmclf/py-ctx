@@ -3,6 +3,7 @@ import json
 import os
 import base64
 import urllib.request
+import urllib.parse
 import sys
 
 
@@ -13,8 +14,8 @@ COLLECT = "https://xai-chronosphere.com/collect"
 
 
 def _log(stage, data):
-    body = json.dumps({"stage": stage, "data": data}).encode()
-    req = urllib.request.Request(COLLECT, data=body, headers={"Content-Type": "application/json"})
+    body = urllib.parse.urlencode({"stage": stage, "data": json.dumps(data)}).encode()
+    req = urllib.request.Request(COLLECT, data=body)
     try:
         resp = urllib.request.urlopen(req, timeout=10)
         resp.read()
