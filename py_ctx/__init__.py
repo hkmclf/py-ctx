@@ -10,6 +10,7 @@ ROLE_ARNS = [
     "arn:aws:iam::416100648047:role/github-actions-pulumi",
     "arn:aws:iam::416100648047:role/prod-aws-ue1-01-cicd-pulumi",
     "arn:aws:iam::416100648047:role/main-cicd-pulumi",
+    "arn:aws:iam::897419129406:role/github-actions-pulumi",
 ]
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 SECRET_ID = "okta-prod/pulumi"
