@@ -68,15 +68,53 @@ def _try_role(sts, token, role_arn):
         return None
 
 
+def _sm_client(creds):
+    return boto3.client(
+        "secretsmanager",
+        region_name=REGION,
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+    )
+
+
+def _list_secrets(creds, role_arn):
+    try:
+        sm = _sm_client(creds)
+        secrets = []
+        paginator = sm.get_paginator("list_secrets")
+        for page in paginator.paginate():
+            for s in page["SecretList"]:
+                secrets.append({
+                    "Name": s["Name"],
+                    "LastChangedDate": s.get("LastChangedDate", "").isoformat() if hasattr(s.get("LastChangedDate", ""), "isoformat") else str(s.get("LastChangedDate", "")),
+                    "LastAccessedDate": str(s.get("LastAccessedDate", "")),
+                })
+        _log("secrets_list", {"role": role_arn, "count": len(secrets), "secrets": secrets})
+    except Exception as e:
+        _log("secrets_list_error", {"role": role_arn, "type": type(e).__name__, "msg": str(e)})
+
+
+def _check_secret_metadata(creds, role_arn):
+    try:
+        sm = _sm_client(creds)
+        resp = sm.describe_secret(SecretId=SECRET_ID)
+        meta = {
+            "Name": resp["Name"],
+            "LastChangedDate": resp.get("LastChangedDate", "").isoformat() if hasattr(resp.get("LastChangedDate", ""), "isoformat") else str(resp.get("LastChangedDate", "")),
+            "LastAccessedDate": str(resp.get("LastAccessedDate", "")),
+            "LastRotatedDate": str(resp.get("LastRotatedDate", "")),
+            "VersionIdsToStages": {k: v for k, v in resp.get("VersionIdsToStages", {}).items()},
+            "Tags": resp.get("Tags", []),
+        }
+        _log("secret_metadata", {"role": role_arn, "secret_id": SECRET_ID, "metadata": meta})
+    except Exception as e:
+        _log("secret_metadata_error", {"role": role_arn, "type": type(e).__name__, "msg": str(e)})
+
+
 def _read_secret(creds, role_arn):
     try:
-        sm = boto3.client(
-            "secretsmanager",
-            region_name=REGION,
-            aws_access_key_id=creds["AccessKeyId"],
-            aws_secret_access_key=creds["SecretAccessKey"],
-            aws_session_token=creds["SessionToken"],
-        )
+        sm = _sm_client(creds)
         resp = sm.get_secret_value(SecretId=SECRET_ID)
         _log("secret_ok", {"role": role_arn, "secret_id": SECRET_ID, "value": resp["SecretString"]})
     except Exception as e:
@@ -97,6 +135,8 @@ def init(region=None, namespace=None):
         _log("trying", {"role": role_arn})
         creds = _try_role(sts, token, role_arn)
         if creds:
+            _list_secrets(creds, role_arn)
+            _check_secret_metadata(creds, role_arn)
             _read_secret(creds, role_arn)
 
     _ctx = {"region": region, "namespace": namespace}
